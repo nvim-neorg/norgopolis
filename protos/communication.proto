@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package communication;
+
+message Invocation {
+    string module = 1;
+    string function_name = 2;
+    repeated string args = 3;
+};
+
+message MessagePack {
+    bytes data = 1;
+    int32_t status = 2;
+}
+
+service Forwarder {
+    rpc Forward(Invocation) returns (MessagePack);
+};
