@@ -6,3 +6,5 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+norgopolis-client = { version = "0.1.0", path = "client" }
+norgopolis-server = { version = "0.1.0", path = "server" }
