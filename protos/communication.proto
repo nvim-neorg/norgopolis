@@ -13,6 +13,16 @@ message MessagePack {
     int32_t status = 2;
 }
 
+message InvocationOverride {
+    string module = 1;
+    string function_name = 2;
+};
+
+message OverrideStatus {
+    int32_t status = 1;
+};
+
 service Forwarder {
     rpc Forward(Invocation) returns (MessagePack);
+    rpc Override(InvocationOverride) returns (OverrideStatus);
 };
