@@ -43,10 +43,29 @@ impl ConnectionHandle {
     }
 }
 
-pub async fn connect(ip: String, port: String) -> anyhow::Result<ConnectionHandle> {
+pub async fn connect(ip: &String, port: &String) -> anyhow::Result<ConnectionHandle> {
     // TODO: Spin up the server if it doesn't already exist
     // NOTE: Perhaps make server spinup a feature flag?
     Ok(ConnectionHandle(
-        ForwarderClient::connect(ip + ":" + &port).await?,
+        ForwarderClient::connect("http://".to_string() + ip + ":" + port).await?,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn establish_connection() {
+        println!(
+            "{}",
+            connect(&"127.0.0.1".into(), &"62020".into())
+                .await
+                .unwrap()
+                .invoke::<(String,)>("my-module".into(), "my-string".into(), None)
+                .await
+                .unwrap()
+                .0
+        );
+    }
 }
