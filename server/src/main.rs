@@ -1,22 +1,32 @@
+use std::pin::Pin;
+
+mod communication;
+
 use communication::{
     forwarder_server::{Forwarder, ForwarderServer},
     Invocation, InvocationOverride, MessagePack, OverrideStatus,
 };
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{
+    codegen::futures_core::Stream, transport::Server, Request, Response, Status, Streaming,
+};
 
-mod communication {
-    tonic::include_proto!("communication");
-}
+mod subprocess;
 
 pub struct ForwarderService {}
 
 #[tonic::async_trait]
 impl Forwarder for ForwarderService {
-    async fn forward(&self, request: Request<Invocation>) -> Result<Response<MessagePack>, Status> {
+    type ForwardStream = Pin<Box<dyn Stream<Item = Result<MessagePack, Status>> + Send>>;
+
+    async fn forward(
+        &self,
+        request: Request<Invocation>,
+    ) -> Result<Response<Streaming<MessagePack>>, Status> {
         let invocation = request.into_inner();
-        Ok(Response::new(MessagePack {
-            data: rmp_serde::to_vec(&("hello world!".to_string(),)).unwrap(),
-        }))
+        let module = match subprocess::new_subprocess(&invocation.module, &vec![]).await {
+            Ok(value) => value,
+            Err(err) => return Err(tonic::Status::new(tonic::Code::FailedPrecondition, err.to_string())),
+        };
     }
 
     async fn r#override(

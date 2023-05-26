@@ -22,6 +22,6 @@ message OverrideStatus {
 };
 
 service Forwarder {
-    rpc Forward(Invocation) returns (MessagePack);
+    rpc Forward(Invocation) returns (stream MessagePack);
     rpc Override(InvocationOverride) returns (OverrideStatus);
 };

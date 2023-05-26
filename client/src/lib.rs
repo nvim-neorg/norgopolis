@@ -1,9 +1,9 @@
-use futures::FutureExt;
+use futures::{FutureExt, TryFutureExt};
 use std::future::Future;
 
 use communication::{forwarder_client::ForwarderClient, Invocation, MessagePack};
 use serde::de::DeserializeOwned;
-use tonic::{transport::Channel, Request, Response, Status};
+use tonic::{transport::Channel, Request, Response, Status, Streaming};
 
 mod communication {
     tonic::include_proto!("communication");
@@ -17,7 +17,7 @@ impl ConnectionHandle {
         module: String,
         function_name: String,
         args: Option<MessagePack>,
-    ) -> impl Future<Output = Result<Response<MessagePack>, Status>> + 'a {
+    ) -> impl Future<Output = Result<Response<Streaming<MessagePack>>, Status>> + 'a {
         self.0.forward(Request::new(Invocation {
             module,
             function_name,
@@ -25,21 +25,48 @@ impl ConnectionHandle {
         }))
     }
 
-    pub fn invoke<'a, TargetStruct>(
+    pub async fn invoke<'a, TargetStruct, F>(
         &'a mut self,
         module: String,
         function_name: String,
         args: Option<MessagePack>,
-    ) -> impl Future<Output = Result<TargetStruct, rmp_serde::decode::Error>> + 'a
+        callback: F
+    ) -> anyhow::Result<()>
+        where F: Fn(TargetStruct),
+        TargetStruct: DeserializeOwned,
+    {
+        self.invoke_raw(module, function_name, args).then(|response| async move {
+            let mut response = response?.into_inner();
+
+            while let Some(data) = response.message().await? {
+                callback(rmp_serde::from_slice::<TargetStruct>(data.data.as_slice()).unwrap());
+            }
+
+            Ok::<(), anyhow::Error>(())
+        }).await?;
+
+        Ok(())
+    }
+
+    pub async fn invoke_collect<TargetStruct>(
+        &mut self,
+        module: String,
+        function_name: String,
+        args: Option<MessagePack>,
+    ) -> anyhow::Result<Vec<TargetStruct>>
     where
         TargetStruct: DeserializeOwned,
     {
-        self.invoke_raw(module, function_name, args)
-            .map(|response| {
-                rmp_serde::from_slice::<TargetStruct>(
-                    response.unwrap().into_inner().data.as_slice(),
-                )
-            })
+        let response = self.invoke_raw(module, function_name, args).await;
+
+        let mut response = response?.into_inner();
+        let mut result: Vec<TargetStruct> = Vec::new();
+
+        while let Some(data) = response.message().await? {
+            result.push(rmp_serde::from_slice::<TargetStruct>(data.data.as_slice()).unwrap());
+        }
+
+        Ok(result)
     }
 }
 
@@ -57,15 +84,6 @@ mod tests {
 
     #[tokio::test]
     async fn establish_connection() {
-        println!(
-            "{}",
-            connect(&"127.0.0.1".into(), &"62020".into())
-                .await
-                .unwrap()
-                .invoke::<(String,)>("my-module".into(), "my-string".into(), None)
-                .await
-                .unwrap()
-                .0
-        );
+        connect(&"127.0.0.1".into(), &"62020".into()).await.unwrap().invoke("test-module".to_string(), "func-name".to_string(), None, |response: (String,)| println!("{}", response.0)).await.unwrap();
     }
 }
