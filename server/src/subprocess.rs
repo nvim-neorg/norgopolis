@@ -28,74 +28,70 @@ impl StdioService {
 
 impl AsyncRead for StdioService {
     fn poll_read(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         _: &mut std::task::Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
-        async {
-            self.reader
-                .read_until(0, &mut buf.filled_mut().into())
-                .await
-                .unwrap();
-        };
+        let runtime = tokio::runtime::Handle::current();
 
-        Poll::Ready(Ok(()))
+        Poll::Ready(
+            runtime
+                .block_on(self.reader.read_until(0, &mut buf.filled_mut().into()))
+                .map(|_| ()),
+        )
     }
 }
 
 impl AsyncWrite for StdioService {
     fn poll_write(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
         buf: &[u8],
     ) -> Poll<std::result::Result<usize, std::io::Error>> {
-        let written;
+        let runtime = tokio::runtime::Handle::current();
 
-        async {
-            written = self.writer.write(buf).await;
-        };
-
-        Poll::Ready(written)
+        Poll::Ready(runtime.block_on(self.writer.write(buf)))
     }
 
     fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
     ) -> Poll<std::result::Result<(), std::io::Error>> {
-        let result;
-        async { result = self.writer.flush().await };
+        let runtime = tokio::runtime::Handle::current();
 
-        Poll::Ready(result)
+        Poll::Ready(runtime.block_on(self.writer.flush()))
     }
 
     fn poll_shutdown(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
     ) -> Poll<std::result::Result<(), std::io::Error>> {
-        let result;
+        let runtime = tokio::runtime::Handle::current();
 
-        async {
-            result = self.writer.shutdown().await;
-        };
-
-        drop(self.writer);
-
-        Poll::Ready(result)
+        Poll::Ready(runtime.block_on(self.writer.shutdown()))
     }
 }
 
-pub async fn new_subprocess(name: &String, args: &Vec<String>) -> Result<tonic::transport::Channel> {
+pub async fn new_subprocess(
+    name: &String,
+    args: &Vec<String>,
+) -> Result<tonic::transport::Channel> {
     let mut command = Command::new(name)
         .args(args)
         .stdin(Stdio::piped())
         .spawn()?;
 
-    let reader = Arc::new(StdioService::new(command.stdin.take().unwrap(), command.stdout.take().unwrap()));
+    let reader = Arc::new(StdioService::new(
+        command.stdin.take().unwrap(),
+        command.stdout.take().unwrap(),
+    ));
 
     let channel = Endpoint::try_from("http://example.com")?
         .connect_with_connector(service_fn(move |_: Uri| {
             let reader_clone = Arc::clone(&reader);
-            async move { Ok::<StdioService, anyhow::Error>(Arc::try_unwrap(reader_clone).unwrap().into()) }
+            async move {
+                Ok::<StdioService, anyhow::Error>(Arc::try_unwrap(reader_clone).unwrap())
+            }
         }))
         .await?;
 

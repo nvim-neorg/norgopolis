@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package module_communication;
+
+message MessagePack {
+    bytes data = 1;
+}
+
+message Invocation {
+    string function_name = 1;
+    MessagePack args = 2;
+};
+
+service Invoker {
+    rpc Invoke(Invocation) returns (stream MessagePack);
+};

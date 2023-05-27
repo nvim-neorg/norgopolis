@@ -1,4 +1,4 @@
-use futures::{FutureExt, TryFutureExt};
+use futures::FutureExt;
 use std::future::Future;
 
 use communication::{forwarder_client::ForwarderClient, Invocation, MessagePack};

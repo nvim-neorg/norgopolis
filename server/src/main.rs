@@ -1,14 +1,17 @@
 use std::pin::Pin;
 
-mod communication;
+mod client_communication;
+mod module_communication;
 
-use communication::{
+use client_communication::{
     forwarder_server::{Forwarder, ForwarderServer},
     Invocation, InvocationOverride, MessagePack, OverrideStatus,
 };
-use tonic::{
-    codegen::futures_core::Stream, transport::Server, Request, Response, Status, Streaming,
-};
+
+use module_communication::invoker_client;
+
+use tokio_stream::wrappers::UnboundedReceiverStream;
+use tonic::{codegen::futures_core::Stream, transport::Server, Request, Response, Status};
 
 mod subprocess;
 
@@ -21,12 +24,44 @@ impl Forwarder for ForwarderService {
     async fn forward(
         &self,
         request: Request<Invocation>,
-    ) -> Result<Response<Streaming<MessagePack>>, Status> {
+    ) -> Result<Response<Self::ForwardStream>, Status> {
         let invocation = request.into_inner();
+
         let module = match subprocess::new_subprocess(&invocation.module, &vec![]).await {
             Ok(value) => value,
-            Err(err) => return Err(tonic::Status::new(tonic::Code::FailedPrecondition, err.to_string())),
+            Err(err) => {
+                return Err(tonic::Status::new(
+                    tonic::Code::FailedPrecondition,
+                    err.to_string(),
+                ))
+            }
         };
+
+        // TODO: Negotiate capabilities with the module.
+
+        let mut client = invoker_client::InvokerClient::new(module);
+
+        let response = client
+            .invoke(module_communication::Invocation {
+                function_name: invocation.function_name,
+                args: Some(module_communication::MessagePack {
+                    data: invocation.args.unwrap().data,
+                }),
+            })
+            .await
+            .unwrap();
+
+        let mut stream = response.into_inner();
+
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
+        tokio::spawn(async move {
+            while let Some(message) = stream.message().await.unwrap() {
+                tx.send(Ok(client_communication::MessagePack { data: message.data })).unwrap();
+            }
+        });
+
+        Ok(Response::new(Box::pin(UnboundedReceiverStream::new(rx))))
     }
 
     async fn r#override(
