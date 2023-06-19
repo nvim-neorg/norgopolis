@@ -1,20 +1,18 @@
-use std::pin::Pin;
-
 mod client_communication;
 mod module_communication;
+mod subprocess;
 
 use client_communication::{
     forwarder_server::{Forwarder, ForwarderServer},
     Invocation, InvocationOverride, MessagePack, OverrideStatus,
 };
-
 use module_communication::invoker_client;
 
+use std::pin::Pin;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::{codegen::futures_core::Stream, transport::Server, Request, Response, Status};
 
-mod subprocess;
-
+#[derive(Default)]
 pub struct ForwarderService {}
 
 #[tonic::async_trait]
@@ -27,7 +25,8 @@ impl Forwarder for ForwarderService {
     ) -> Result<Response<Self::ForwardStream>, Status> {
         let invocation = request.into_inner();
 
-        let module = match subprocess::new_subprocess(&invocation.module, &vec![]).await {
+        // TODO: Don't spawn a new command if it's already running.
+        let module = match subprocess::new_subprocess(invocation.module, vec![]).await {
             Ok(value) => value,
             Err(err) => {
                 return Err(tonic::Status::new(
@@ -48,8 +47,7 @@ impl Forwarder for ForwarderService {
                     data: invocation.args.unwrap().data,
                 }),
             })
-            .await
-            .unwrap();
+            .await?;
 
         let mut stream = response.into_inner();
 
@@ -57,13 +55,15 @@ impl Forwarder for ForwarderService {
 
         tokio::spawn(async move {
             while let Some(message) = stream.message().await.unwrap() {
-                tx.send(Ok(client_communication::MessagePack { data: message.data })).unwrap();
+                tx.send(Ok(client_communication::MessagePack { data: message.data }))
+                    .expect("Failed to forward response to client!");
             }
         });
 
         Ok(Response::new(Box::pin(UnboundedReceiverStream::new(rx))))
     }
 
+    // TODO: Implement
     async fn r#override(
         &self,
         _request: Request<InvocationOverride>,
@@ -74,12 +74,14 @@ impl Forwarder for ForwarderService {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // TODO: Add clap, make this changeable
     let address = "127.0.0.1:62020".parse().unwrap();
-    let forwarder_service = ForwarderService {};
+    let forwarder_service = ForwarderService::default();
 
     Server::builder()
         .add_service(ForwarderServer::new(forwarder_service))
         .serve(address)
         .await?;
+
     Ok(())
 }
