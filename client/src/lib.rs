@@ -5,7 +5,7 @@ use communication::{forwarder_client::ForwarderClient, Invocation, MessagePack};
 use serde::de::DeserializeOwned;
 use tonic::{transport::Channel, Request, Response, Status, Streaming};
 
-mod communication {
+pub mod communication {
     tonic::include_proto!("communication");
 }
 
