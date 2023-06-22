@@ -1,18 +1,38 @@
 use std::pin::Pin;
 
 use futures::Stream;
-use tokio_stream::wrappers::ReceiverStream;
-use tonic::{Status, Request, Response};
-
+use tonic::{Request, Response, Status};
 use crate::module_communication::{
     invoker_server::Invoker,
     Invocation, MessagePack,
 };
 
-pub struct InvokerService {}
+#[crate::async_trait]
+pub trait Service {
+    type Stream: Stream<Item = Result<MessagePack, Status>> + Send;
+
+    async fn call(&self, fn_name: String, args: Option<MessagePack>) -> Result<Self::Stream, Status>;
+}
+
+pub struct InvokerService<T>
+{
+    service: T,
+}
+
+impl<T> InvokerService<T>
+where T: Service,
+{
+    pub fn new(service: T) -> InvokerService<T> {
+        InvokerService {
+            service
+        }
+    }
+}
 
 #[tonic::async_trait]
-impl Invoker for InvokerService {
+impl<T> Invoker for InvokerService<T>
+where T: Service + Sync + Send + 'static
+{
     type InvokeStream = Pin<Box<dyn Stream<Item = Result<MessagePack, Status>> + Send>>;
 
     async fn invoke(
@@ -21,13 +41,8 @@ impl Invoker for InvokerService {
     ) -> Result<Response<Self::InvokeStream>, Status> {
         let invocation = request.into_inner();
 
-        if invocation.function_name == "echo".to_string() {
-            let (tx, rx) = tokio::sync::mpsc::channel(1);
-            tx.send(Ok(invocation.args.unwrap())).await.unwrap();
+        let response = self.service.call(invocation.function_name, invocation.args).await?;
 
-            Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
-        } else {
-            Err(Status::new(tonic::Code::NotFound, "Function not found!"))
-        }
+        Ok(Response::new(Box::pin(response)))
     }
 }
