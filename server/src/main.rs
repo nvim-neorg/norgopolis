@@ -9,9 +9,10 @@ use client_communication::{
 use module_communication::invoker_client;
 use std::path::PathBuf;
 
+use futures::FutureExt;
 use std::pin::Pin;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tonic::{codegen::futures_core::Stream, transport::Server, Request, Response, Status};
+use tonic::{codegen::futures_core::Stream, transport::Server, Code, Request, Response, Status};
 
 pub struct ForwarderService {
     search_path: PathBuf,
@@ -51,27 +52,31 @@ impl Forwarder for ForwarderService {
 
         let mut client = invoker_client::InvokerClient::new(module);
 
-        let response = client
+        client
             .invoke(module_communication::Invocation {
                 function_name: invocation.function_name,
                 args: Some(module_communication::MessagePack {
                     data: invocation.args.unwrap().data,
                 }),
             })
-            .await?;
+            .then(|future| async move {
+                let mut stream = future?.into_inner();
 
-        let mut stream = response.into_inner();
+                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                while let Some(message) = stream.message().await? {
+                    if let Err(err) =
+                        tx.send(Ok(client_communication::MessagePack { data: message.data }))
+                    {
+                        return Err(Status::new(Code::Cancelled, err.to_string()));
+                    }
+                }
 
-        tokio::spawn(async move {
-            while let Some(message) = stream.message().await.unwrap() {
-                tx.send(Ok(client_communication::MessagePack { data: message.data }))
-                    .expect("Failed to forward response to client!");
-            }
-        });
-
-        Ok(Response::new(Box::pin(UnboundedReceiverStream::new(rx))))
+                Ok(Response::new(
+                    Box::pin(UnboundedReceiverStream::new(rx)) as Self::ForwardStream
+                ))
+            })
+            .await
     }
 
     // TODO: Implement
