@@ -45,7 +45,6 @@ impl Forwarder for ForwarderService {
     ) -> Result<Response<Self::ForwardStream>, Status> {
         let invocation = request.into_inner();
 
-        // TODO: Don't spawn a new command if it's already running.
         let module = {
             let command_map = &mut self.command_map.lock().await;
 
