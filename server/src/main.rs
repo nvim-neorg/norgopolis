@@ -7,13 +7,21 @@ use client_communication::{
     Invocation, InvocationOverride, MessagePack, OverrideStatus,
 };
 use module_communication::invoker_client;
+use std::path::PathBuf;
 
 use std::pin::Pin;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::{codegen::futures_core::Stream, transport::Server, Request, Response, Status};
 
-#[derive(Default)]
-pub struct ForwarderService {}
+pub struct ForwarderService {
+    search_path: PathBuf,
+}
+
+impl ForwarderService {
+    pub fn new(search_path: PathBuf) -> Self {
+        ForwarderService { search_path }
+    }
+}
 
 #[tonic::async_trait]
 impl Forwarder for ForwarderService {
@@ -26,15 +34,18 @@ impl Forwarder for ForwarderService {
         let invocation = request.into_inner();
 
         // TODO: Don't spawn a new command if it's already running.
-        let module = match subprocess::new_subprocess(invocation.module, vec![]).await {
-            Ok(value) => value,
-            Err(err) => {
-                return Err(tonic::Status::new(
-                    tonic::Code::FailedPrecondition,
-                    err.to_string(),
-                ))
-            }
-        };
+        let module =
+            match subprocess::new_subprocess(invocation.module, vec![], self.search_path.clone())
+                .await
+            {
+                Ok(value) => value,
+                Err(err) => {
+                    return Err(tonic::Status::new(
+                        tonic::Code::FailedPrecondition,
+                        err.to_string(),
+                    ))
+                }
+            };
 
         // TODO: Negotiate capabilities with the module.
 
@@ -76,7 +87,11 @@ impl Forwarder for ForwarderService {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TODO: Add clap, make this changeable
     let address = "127.0.0.1:62020".parse().unwrap();
-    let forwarder_service = ForwarderService::default();
+    let data_dir = directories::ProjectDirs::from("org", "neorg", "norgopolis").expect("Could not grab known data directories, are you running on a non-unix and non-windows system?").data_dir().join("modules");
+
+    let _ = std::fs::create_dir_all(&data_dir);
+
+    let forwarder_service = ForwarderService::new(data_dir);
 
     Server::builder()
         .add_service(ForwarderServer::new(forwarder_service))

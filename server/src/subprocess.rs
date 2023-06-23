@@ -1,6 +1,7 @@
 //! This file manages the handling of modules (subprocesses)
 
 use anyhow::Result;
+use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::io::AsyncWrite;
 use tokio::process::Child;
@@ -70,17 +71,23 @@ impl AsyncRead for StdioService {
 ///
 /// * `name`: The name of the subprocess to launch.
 /// * `args`: A vector of arguments to pass to the application on startup.
-pub async fn new_subprocess(name: String, args: Vec<String>) -> Result<tonic::transport::Channel> {
+pub async fn new_subprocess(
+    name: String,
+    args: Vec<String>,
+    search_dir: PathBuf,
+) -> Result<tonic::transport::Channel> {
     // NOTE: The URL passed to `from_shared` must resemble a real URI, but it is not used.
     // This is why we use `example.com`. No connection to that resource is ever made.
     let channel = Endpoint::from_shared("http://example.com")?
         .connect_with_connector(service_fn(move |_: Uri| {
-            let command = Command::new(name.clone())
-                .args(args.clone())
+            let command = Command::new(&name)
+                .args(&args)
+                .current_dir(&search_dir)
+                .env("PATH", &search_dir)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .spawn()
-                .unwrap();
+                .expect("Module not found!"); // TODO: Proper error handling
 
             async move { Ok::<_, anyhow::Error>(StdioService::new(command)) }
         }))
