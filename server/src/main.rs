@@ -7,20 +7,31 @@ use client_communication::{
     Invocation, InvocationOverride, MessagePack, OverrideStatus,
 };
 use module_communication::invoker_client;
+use std::collections::HashMap;
+
 use std::path::PathBuf;
+use std::pin::Pin;
+use tokio::sync::Mutex;
+use tokio_stream::wrappers::UnboundedReceiverStream;
+use tonic::{
+    codegen::futures_core::Stream,
+    transport::{Channel, Server},
+    Code, Request, Response, Status,
+};
 
 use futures::FutureExt;
-use std::pin::Pin;
-use tokio_stream::wrappers::UnboundedReceiverStream;
-use tonic::{codegen::futures_core::Stream, transport::Server, Code, Request, Response, Status};
 
 pub struct ForwarderService {
+    command_map: Mutex<HashMap<String, Channel>>,
     search_path: PathBuf,
 }
 
 impl ForwarderService {
     pub fn new(search_path: PathBuf) -> Self {
-        ForwarderService { search_path }
+        ForwarderService {
+            search_path,
+            command_map: HashMap::new().into(),
+        }
     }
 }
 
@@ -35,18 +46,35 @@ impl Forwarder for ForwarderService {
         let invocation = request.into_inner();
 
         // TODO: Don't spawn a new command if it's already running.
-        let module =
-            match subprocess::new_subprocess(invocation.module, vec![], self.search_path.clone())
-                .await
-            {
-                Ok(value) => value,
-                Err(err) => {
-                    return Err(tonic::Status::new(
-                        tonic::Code::FailedPrecondition,
-                        err.to_string(),
-                    ))
+        let module = {
+            let command_map = &mut self.command_map.lock().await;
+
+            match command_map.get(&invocation.module) {
+                Some(channel) => channel.to_owned(),
+                None => {
+                    let command = match subprocess::new_subprocess(
+                        invocation.module.clone(),
+                        vec![],
+                        self.search_path.clone(),
+                    )
+                    .await
+                    {
+                        Ok(value) => value,
+                        Err(err) => {
+                            return Err(tonic::Status::new(
+                                tonic::Code::FailedPrecondition,
+                                err.to_string(),
+                            ))
+                        }
+                    };
+
+                    // TODO: Can we prevent this clone?
+                    command_map.insert(invocation.module, command.clone());
+
+                    command
                 }
-            };
+            }
+        };
 
         // TODO: Negotiate capabilities with the module.
 
