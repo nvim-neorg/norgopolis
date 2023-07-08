@@ -2,6 +2,7 @@
 name = "norgopolis-server"
 description = "A backend server for Norg related applications. "
 repository = "https://github.com/nvim-neorg/norgopolis"
+license = "MIT"
 version = "0.1.0"
 edition = "2021"
 
