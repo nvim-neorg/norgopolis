@@ -1,5 +1,7 @@
 # Norgopolis
 
+([Client Implementation](https://github.com/nvim-neorg/norgopolis-client) / [Module Implementation](https://github.com/nvim-neorg/norgopolis-module))
+
 Norgopolis is a lightweight communication, launcher and utility services client for the Neorg rust-native modules ecosystem on Desktop. It is designed to connect, launch and manage instances of modules such as the [Norgberg database system](https://github.com/SevorisDoe/Norgberg) which should only exist once per desktop, but provide services to *n* frontends such as multiple neovim processes, without the need for intermediate process ownership changes or process re-launches.
 
 Norgopolis also provides for the ability to download and connect different services together without the need for recompilation or complete re-launch, making for easy modifying and extension by the common user.
