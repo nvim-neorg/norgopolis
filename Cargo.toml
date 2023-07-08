@@ -1,10 +1,18 @@
 [package]
-name = "norgopolis"
+name = "norgopolis-server"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-norgopolis-client = { version = "0.1.0", path = "client" }
-norgopolis-server = { version = "0.1.0", path = "server" }
+anyhow = "1.0.71"
+directories = "5.0.1"
+futures = "0.3.28"
+norgopolis-protos = "0.2.0"
+rmp = "0.8.11"
+rmp-serde = "1.1.1"
+tokio = { version = "1.28.1", features = ["rt-multi-thread", "macros", "process", "io-std"] }
+tokio-stream = "0.1.14"
+tonic = "0.9.2"
+tower = "0.4.13"

@@ -1,5 +1,20 @@
+use std::collections::HashMap;
+
 use norgopolis_client::communication::MessagePack;
 use tokio;
+
+#[derive(serde::Serialize)]
+struct QueryArguments {
+    path: String,
+    query: String,
+    num_jobs: Option<usize>,
+}
+
+#[derive(serde::Deserialize, Debug)]
+struct ParseQueryResult {
+    _file: String,
+    _captures: HashMap<String, Vec<String>>,
+}
 
 #[tokio::main]
 async fn main() {
@@ -8,14 +23,31 @@ async fn main() {
 
     let mut handle = norgopolis_client::connect(&ip, &port).await.unwrap();
 
+    // handle
+    //     .invoke(
+    //         "hello-world".into(),
+    //         "echo".into(),
+    //         Some(MessagePack {
+    //             data: rmp_serde::to_vec("Hello!").unwrap(),
+    //         }),
+    //         |str: String| println!("{}", str),
+    //     )
+    //     .await
+    //     .unwrap();
+
     handle
         .invoke(
-            "hello-world".into(),
-            "echo".into(),
+            "norgopolis-breeze".into(),
+            "parse-query".into(),
             Some(MessagePack {
-                data: rmp_serde::to_vec("Hello!").unwrap(),
+                data: rmp_serde::to_vec(&QueryArguments {
+                    path: "/home/vhyrro/neorg/".into(),
+                    query: "(_) @value".into(),
+                    num_jobs: None,
+                })
+                .unwrap(),
             }),
-            |str: String| println!("{}", str),
+            |str: ParseQueryResult| println!("{:#?}", str),
         )
         .await
         .unwrap();

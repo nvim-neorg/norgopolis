@@ -1,12 +1,10 @@
-mod client_communication;
-mod module_communication;
 mod subprocess;
 
-use client_communication::{
+use norgopolis_protos::client_communication::{
     forwarder_server::{Forwarder, ForwarderServer},
     Invocation, InvocationOverride, MessagePack, OverrideStatus,
 };
-use module_communication::invoker_client;
+use norgopolis_protos::module_communication::invoker_client;
 use std::collections::HashMap;
 
 use std::path::PathBuf;
@@ -80,9 +78,9 @@ impl Forwarder for ForwarderService {
         let mut client = invoker_client::InvokerClient::new(module);
 
         client
-            .invoke(module_communication::Invocation {
+            .invoke(norgopolis_protos::module_communication::Invocation {
                 function_name: invocation.function_name,
-                args: Some(module_communication::MessagePack {
+                args: Some(norgopolis_protos::module_communication::MessagePack {
                     data: invocation.args.unwrap().data,
                 }),
             })
@@ -93,7 +91,9 @@ impl Forwarder for ForwarderService {
 
                 while let Some(message) = stream.message().await? {
                     if let Err(err) =
-                        tx.send(Ok(client_communication::MessagePack { data: message.data }))
+                        tx.send(Ok(norgopolis_protos::client_communication::MessagePack {
+                            data: message.data,
+                        }))
                     {
                         return Err(Status::new(Code::Cancelled, err.to_string()));
                     }
