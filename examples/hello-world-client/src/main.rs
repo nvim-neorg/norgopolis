@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use norgopolis_client::communication::MessagePack;
+use norgopolis_protos::client_communication::MessagePack;
 use tokio;
 
 #[derive(serde::Serialize)]
