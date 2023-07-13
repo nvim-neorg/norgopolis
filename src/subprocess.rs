@@ -2,7 +2,9 @@
 
 use anyhow::Result;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::process::Stdio;
+use std::task::{Context, Poll};
 use tokio::io::AsyncWrite;
 use tokio::process::Child;
 use tokio::{
@@ -33,36 +35,30 @@ impl StdioService {
 /// Propagates the AsyncWrite trait of `stdin`
 impl AsyncWrite for StdioService {
     fn poll_write(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
         buf: &[u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
-        AsyncWrite::poll_write(std::pin::Pin::new(&mut self.stdin), cx, buf)
+    ) -> Poll<std::io::Result<usize>> {
+        AsyncWrite::poll_write(Pin::new(&mut self.stdin), cx, buf)
     }
 
-    fn poll_flush(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        AsyncWrite::poll_flush(std::pin::Pin::new(&mut self.stdin), cx)
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        AsyncWrite::poll_flush(Pin::new(&mut self.stdin), cx)
     }
 
-    fn poll_shutdown(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        AsyncWrite::poll_shutdown(std::pin::Pin::new(&mut self.stdin), cx)
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        AsyncWrite::poll_shutdown(Pin::new(&mut self.stdin), cx)
     }
 }
 
 /// Propagates the AsyncRead trait of `stdout`
 impl AsyncRead for StdioService {
     fn poll_read(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        AsyncRead::poll_read(std::pin::Pin::new(&mut self.stdout), cx, buf)
+    ) -> Poll<std::io::Result<()>> {
+        AsyncRead::poll_read(Pin::new(&mut self.stdout), cx, buf)
     }
 }
 
