@@ -3,7 +3,6 @@
 use anyhow::Result;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::Arc;
 use tokio::io::AsyncWrite;
 use tokio::process::Child;
 use tokio::{
@@ -79,19 +78,17 @@ pub async fn new_subprocess(
 ) -> Result<tonic::transport::Channel> {
     // NOTE: The URL passed to `from_shared` must resemble a real URI, but it is not used.
     // This is why we use `example.com`. No connection to that resource is ever made.
-    let (name, args, search_dir) = (Arc::new(name), Arc::new(args), Arc::new(search_dir));
-
     let channel = Endpoint::from_shared("http://example.com")?
         .connect_with_connector(service_fn(move |_: Uri| {
-            let name = Arc::clone(&name);
-            let args = Arc::clone(&args);
-            let search_dir = Arc::clone(&search_dir);
+            let name = name.clone();
+            let args = args.clone();
+            let search_dir = search_dir.clone();
 
             async move {
-                let command = Command::new(&*name)
-                    .args(&*args)
-                    .current_dir(&*search_dir)
-                    .env("PATH", &*search_dir)
+                let command = Command::new(&name)
+                    .args(&args)
+                    .current_dir(&search_dir)
+                    .env("PATH", &search_dir)
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .spawn()?;
