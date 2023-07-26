@@ -31,9 +31,9 @@ When a client is launched, it tries to find an existing server instant via gRPC.
 
 The Norgopolis server reference-counts registered clients. If clients die or time out with no communication for a certain duration, they are removed from the reference count. If the reference count hits zero, Norgopolis will gracefully exit itself and all its child processes.
 
-The core of Norgopolis is a communications router between the frontend gRPC connection(s) and the set of currently loaded modules. "Modules" are executable binaries that conform to the Neorg native module standard, providing a configurations TOML and a stdin/stdout-based RPC communications interface. Modules provide services to their callers. Norgberg is an example of such a module, providing database services.
+The core of Norgopolis is a communications router between the frontend gRPC connection(s) and the set of currently loaded modules. "Modules" are executable binaries that conform to the Neorg native module standard. The standard defines a brotobuffer gRPC interface over stdin/stdout-based communications channel. Modules must be able to accept a method invocation call and on startuo provide a message declaring their name, semantic version number and directly dependant other modules by name and semantic version number. Norgberg is an example of such a module, providing database services.
 
-Related to the router is Norgopolis' loader capability. Norgopolis routes calls using a module name specified in the RPC protocol buffer data. If no such module is currently registered on the router, Norgopolis will attempt to locate the binary in a modules directory and spawn a child thread with that binary in it. This allows for inherent lazy loading, "self-loading" and adding-modules-underway. Modules may declare transient module dependencies in their configurations TOML, in which case the Norgobolis loader will verify availability and fail the load if dependencies are not availiable. Likewise, inabililty to locate an executable binary will fail gracefully.
+Related to the router is Norgopolis' loader capability. Norgopolis routes calls using a module name specified in the RPC protocol buffer data. If no such module is currently registered on the router, Norgopolis will attempt to locate the binary in a modules directory and spawn a child thread with that binary in it. This allows for inherent lazy loading, "self-loading" and adding-modules-underway. Modules may declare transient module dependencies in their startup information structure, in which case the Norgobolis loader will verify availability and fail the load if dependencies are not availiable. Likewise, inabililty to locate an executable binary will fail gracefully.
 
 Modules only have to be compiled binaries or otherwise executable programs. They run as independent child threads of Norgopolis. Note: that means of Norgopolis exists, so will these child threads. This is by design and should be bypassed sparingly. Norgopolis will broadcast shutdown RPC messages when it exits.
 
@@ -49,13 +49,16 @@ The server talks with any clients or other external callers which are not module
 
 Modules talk to the server and through it with callers and other modules using stdin/stdout-piped protobuffers that follow the same specification. The server provides the asynchronous routing.
 
+### Norgopolis Secure Launch 
+As a general policy, Norgopolis is designed to serve n frontend clients at the same time. This has inherent security implications since Norgopolis will by default not refuse connections from new clients that connect. If more security is desired, Norgopolis can be launched in single-connection mode as the child dof a single frontend. This isolates communication and callability from outside, but will cause any further client launches to fail. 
+
 ## Neat hacks and implications
 
 Since Norgopolis launches executable files as child threads and communicates using protocol buffers over stdin/stdout, any executable that can talk according to our spec can be loaded as a module. This not only inoculates against Rust ABI changes between versions, but also allows modules compiled in other languages (or interpreted on the spot) to be loaded up into your system. Be however aware of the performance implications (modules run as separate threads, so slow programs will begin clogging your CPU), and modules are generally understood to be persistent, not transient, until unloaded with a command to the server or the server exits, and thus also all module threads. (That said, you can exit as a module yourself. Again, just beware of the implications.)
 
 ### Self-loading
 
-Since Norgopolis will attempt to locate and launch modules for which it has received a method call but does not have an active instance to route to, you can use this to inject an executable into the modules group from external gRPC calls, by having an executable containing Neorg module logic first call the server, provide its loading spec, exist its initial thread and then launch as a module thread under the server. This can be a very neat method to run modules one-off as part of a script ecosystem, or for cases such as testing.
+The ability to load new modules is limited in Norgopolis by security design. However, if is possible to load modules on-demand by placing the module executive in the loading folder and then placing a method invocation call to that module on the gRPC connection as a client. This will initiate loading and execution. This can be used to execute larger batch processing-type activities from external scripts, using the external script as the initiator and controller and your costom module as the inner worker on the Norgopolis system.
 
 ### Default lazy loading
 
