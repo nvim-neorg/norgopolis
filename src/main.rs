@@ -65,10 +65,7 @@ impl Forwarder for ForwarderService {
                         }
                     };
 
-                    // TODO: Can we prevent this clone?
-                    command_map.insert(invocation.module, command.clone());
-
-                    command
+                    command_map.insert(invocation.module, command.clone()).unwrap_or(command)
                 }
             }
         };
@@ -81,7 +78,8 @@ impl Forwarder for ForwarderService {
             .invoke(norgopolis_protos::module_communication::Invocation {
                 function_name: invocation.function_name,
                 args: Some(norgopolis_protos::module_communication::MessagePack {
-                    data: invocation.args.unwrap().data,
+                    // TODO(vhyrro): Allow no arguments to be sent over the invocation
+                    data: invocation.args.and_then(|val| Some(val.data)).unwrap_or(vec![b'{', b'}']),
                 }),
             })
             .then(|future| async move {
