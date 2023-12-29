@@ -5,11 +5,11 @@ use norgopolis_protos::client_communication::{
     Invocation, InvocationOverride, MessagePack, OverrideStatus,
 };
 use norgopolis_protos::module_communication::invoker_client;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use std::path::PathBuf;
 use std::pin::Pin;
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, time::sleep};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::{
     codegen::futures_core::Stream,
@@ -22,13 +22,15 @@ use futures::FutureExt;
 pub struct ForwarderService {
     command_map: Mutex<HashMap<String, Channel>>,
     search_path: PathBuf,
+    tx: tokio::sync::mpsc::Sender<()>,
 }
 
 impl ForwarderService {
-    pub fn new(search_path: PathBuf) -> Self {
+    pub fn new(search_path: PathBuf, tx: tokio::sync::mpsc::Sender<()>) -> Self {
         ForwarderService {
             search_path,
             command_map: HashMap::new().into(),
+            tx,
         }
     }
 }
@@ -42,6 +44,8 @@ impl Forwarder for ForwarderService {
         request: Request<Invocation>,
     ) -> Result<Response<Self::ForwardStream>, Status> {
         let invocation = request.into_inner();
+
+        let _ = self.tx.send(()).await;
 
         let module = {
             let command_map = &mut self.command_map.lock().await;
@@ -65,7 +69,9 @@ impl Forwarder for ForwarderService {
                         }
                     };
 
-                    command_map.insert(invocation.module, command.clone()).unwrap_or(command)
+                    command_map
+                        .insert(invocation.module, command.clone())
+                        .unwrap_or(command)
                 }
             }
         };
@@ -79,7 +85,10 @@ impl Forwarder for ForwarderService {
                 function_name: invocation.function_name,
                 args: Some(norgopolis_protos::module_communication::MessagePack {
                     // TODO(vhyrro): Allow no arguments to be sent over the invocation
-                    data: invocation.args.and_then(|val| Some(val.data)).unwrap_or(vec![b'{', b'}']),
+                    data: invocation
+                        .args
+                        .map(|val| val.data)
+                        .unwrap_or(vec![b'{', b'}']),
                 }),
             })
             .then(|future| async move {
@@ -121,7 +130,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let _ = std::fs::create_dir_all(&data_dir);
 
-    let forwarder_service = ForwarderService::new(data_dir);
+    // Keeps the instance of norgopolis alive.
+    // On every succesful request from a client this will be filled,
+    // preventing the application from shutting itself down due to a timeout.
+    let (tx, mut rx): (tokio::sync::mpsc::Sender<()>, _) = tokio::sync::mpsc::channel(1);
+
+    let forwarder_service = ForwarderService::new(data_dir, tx);
+
+    tokio::spawn(async move {
+        loop {
+            sleep(Duration::from_secs(60 * 5)).await;
+
+            if rx.recv().now_or_never().is_none() {
+                // TODO: Exit graecfully, shut down all other subprocesses
+                // (this means they must be stored in some sort of table,
+                // or their PIDs copied somewhere).
+                std::process::exit(0);
+            }
+        }
+    });
 
     Server::builder()
         .add_service(ForwarderServer::new(forwarder_service))
