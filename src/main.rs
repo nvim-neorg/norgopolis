@@ -150,6 +150,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    println!("ready");
+
     Server::builder()
         .add_service(ForwarderServer::new(forwarder_service))
         .serve(address)
