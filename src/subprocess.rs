@@ -9,7 +9,7 @@ use tokio::io::AsyncWrite;
 use tokio::process::Child;
 use tokio::{
     io::{AsyncRead, ReadBuf},
-    process::{ChildStdin, ChildStdout, Command},
+    process::Command,
 };
 use tonic::transport::{Endpoint, Uri};
 use tower::service_fn;
@@ -20,15 +20,22 @@ use tower::service_fn;
 /// * `stdin`: The child stdin handle
 /// * `stdout`: The child stdout handle
 struct StdioService {
-    stdin: ChildStdin,
-    stdout: ChildStdout,
+    child: Child,
 }
 
 impl StdioService {
-    fn new(command: Child) -> Self {
-        let (stdin, stdout) = (command.stdin.unwrap(), command.stdout.unwrap());
+    fn new(child: Child) -> Self {
+        StdioService { child }
+    }
+}
 
-        StdioService { stdin, stdout }
+impl Drop for StdioService {
+    fn drop(&mut self) {
+        // TODO: I believe this is valid according to the docs. This would have to be triple
+        // checked however.
+        // Tokio's kill_on_drop() does not function as intended when the application is killed.
+        self.child.start_kill().unwrap();
+        self.child.try_wait().unwrap();
     }
 }
 
@@ -39,15 +46,15 @@ impl AsyncWrite for StdioService {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<std::io::Result<usize>> {
-        AsyncWrite::poll_write(Pin::new(&mut self.stdin), cx, buf)
+        AsyncWrite::poll_write(Pin::new(&mut self.child.stdin.as_mut().unwrap()), cx, buf)
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        AsyncWrite::poll_flush(Pin::new(&mut self.stdin), cx)
+        AsyncWrite::poll_flush(Pin::new(&mut self.child.stdin.as_mut().unwrap()), cx)
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        AsyncWrite::poll_shutdown(Pin::new(&mut self.stdin), cx)
+        AsyncWrite::poll_shutdown(Pin::new(&mut self.child.stdin.as_mut().unwrap()), cx)
     }
 }
 
@@ -58,7 +65,7 @@ impl AsyncRead for StdioService {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
-        AsyncRead::poll_read(Pin::new(&mut self.stdout), cx, buf)
+        AsyncRead::poll_read(Pin::new(&mut self.child.stdout.as_mut().unwrap()), cx, buf)
     }
 }
 
