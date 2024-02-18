@@ -150,6 +150,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // or their PIDs copied somewhere).
                 std::process::exit(0);
             }
+
+            // Drain the remaining messages.
+            while rx.recv().now_or_never().is_some() {};
         }
     });
 
