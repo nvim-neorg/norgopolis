@@ -22,11 +22,11 @@ use futures::FutureExt;
 pub struct ForwarderService {
     command_map: Mutex<HashMap<String, Channel>>,
     search_path: PathBuf,
-    tx: tokio::sync::mpsc::Sender<()>,
+    tx: tokio::sync::mpsc::UnboundedSender<()>,
 }
 
 impl ForwarderService {
-    pub fn new(search_path: PathBuf, tx: tokio::sync::mpsc::Sender<()>) -> Self {
+    pub fn new(search_path: PathBuf, tx: tokio::sync::mpsc::UnboundedSender<()>) -> Self {
         ForwarderService {
             search_path,
             command_map: HashMap::new().into(),
@@ -45,7 +45,7 @@ impl Forwarder for ForwarderService {
     ) -> Result<Response<Self::ForwardStream>, Status> {
         let invocation = request.into_inner();
 
-        let _ = self.tx.send(()).await;
+        let _ = self.tx.send(());
 
         let module = {
             let command_map = &mut self.command_map.lock().await;
@@ -133,7 +133,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Keeps the instance of norgopolis alive.
     // On every succesful request from a client this will be filled,
     // preventing the application from shutting itself down due to a timeout.
-    let (tx, mut rx): (tokio::sync::mpsc::Sender<()>, _) = tokio::sync::mpsc::channel(1);
+    // TODO(vhyrro): Is there a better way of going around this, without the need for an unbounded
+    // channel?
+    let (tx, mut rx): (tokio::sync::mpsc::UnboundedSender<()>, _) =
+        tokio::sync::mpsc::unbounded_channel();
 
     let forwarder_service = ForwarderService::new(data_dir, tx);
 
