@@ -19,9 +19,13 @@ use tonic::{
 
 use futures::FutureExt;
 
+/// The gRPC service used to forward message to their respective module.
 pub struct ForwarderService {
+    /// A list of active modules.
     command_map: Mutex<HashMap<String, Channel>>,
+    /// The path to search for modules. For security this is a single path.
     search_path: PathBuf,
+    // The sender used to transmit data back to the client.
     tx: tokio::sync::mpsc::UnboundedSender<()>,
 }
 
@@ -45,7 +49,9 @@ impl Forwarder for ForwarderService {
     ) -> Result<Response<Self::ForwardStream>, Status> {
         let invocation = request.into_inner();
 
-        let _ = self.tx.send(());
+        self.tx
+            .send(())
+            .map_err(|err| Status::new(Code::Internal, err.to_string()))?;
 
         let module = {
             let command_map = &mut self.command_map.lock().await;
@@ -152,10 +158,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // Drain the remaining messages.
-            while rx.recv().now_or_never().is_some() {};
+            while rx.recv().now_or_never().is_some() {}
         }
     });
 
+    // The ready message is sent to stdout. It allows for clients to properly synchronize with the
+    // server upon startup.
     println!("ready");
 
     Server::builder()

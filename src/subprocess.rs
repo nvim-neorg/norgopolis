@@ -1,4 +1,4 @@
-//! This file manages the handling of modules (subprocesses)
+//! Manages the handling of modules (subprocesses).
 
 use anyhow::Result;
 use std::path::PathBuf;
