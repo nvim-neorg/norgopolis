@@ -10,6 +10,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.71"
+clap = { version = "4.5.1", features = ["derive"] }
 directories = "5.0.1"
 futures = "0.3.28"
 norgopolis-protos = "0.3.0"

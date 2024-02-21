@@ -1,5 +1,6 @@
 mod subprocess;
 
+use clap::{arg, Parser};
 use norgopolis_protos::client_communication::{
     forwarder_server::{Forwarder, ForwarderServer},
     Invocation, InvocationOverride, MessagePack, OverrideStatus,
@@ -128,13 +129,28 @@ impl Forwarder for ForwarderService {
     }
 }
 
+#[derive(Parser)]
+struct Norgopolis {
+    /// The path to search for modules. Defaults to `~/.local/share/norgopolis/modules/` on Unix systems.
+    #[arg(long)]
+    path: Option<PathBuf>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cli = Norgopolis::parse();
+
     // TODO: Add clap, make this changeable
     let address = "127.0.0.1:62020".parse().unwrap();
-    let data_dir = directories::ProjectDirs::from("org", "neorg", "norgopolis").expect("Could not grab known data directories, are you running on a non-unix and non-windows system?").data_dir().join("modules");
 
-    let _ = std::fs::create_dir_all(&data_dir);
+    let data_dir = cli.path.unwrap_or_else(|| {
+        let directory = directories::ProjectDirs::from("org", "neorg", "norgopolis").expect("Could not grab known data directories, are you running on a non-unix and non-windows system?").data_dir().join("modules");
+
+        let _ = std::fs::create_dir_all(&directory);
+
+        directory
+
+    });
 
     // Keeps the instance of norgopolis alive.
     // On every succesful request from a client this will be filled,
